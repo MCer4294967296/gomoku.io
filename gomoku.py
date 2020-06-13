@@ -8,7 +8,7 @@ class Game:
         for i in range(SIZEOFBOARD):
             row = [EMPTY] * SIZEOFBOARD
             self.grid.append(row)
-        self.last = WHITE
+        self.next = BLACK
     
 
     def down(self, p, loc):
@@ -21,7 +21,7 @@ class Game:
             5 if wrong player moving
             <0 for various rules
         """
-        if p == self.last:
+        if p != self.next:
             return 5
         r, c = loc
         if not self.validLoc(loc):
@@ -36,7 +36,7 @@ class Game:
         self.grid[r][c] = p
         if self.checkIfWinningAt(loc):
             return 1
-        self.last = p
+        self.next = BLACK if p is WHITE else WHITE
         return 0
 
 
