@@ -3,10 +3,17 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"net/http"
+	//"io/ioutil"
 )
 
 
 func main() {
-	
+	http.HandleFunc("/", HelloServer)
+	_ = http.ListenAndServe(":8000", nil)
+}
+
+
+func HelloServer (w http.ResponseWriter, r *http.Request) {
+	_, _ = fmt.Fprintf(w, "Hello, %s!", r.URL.Path[1:])
 }
