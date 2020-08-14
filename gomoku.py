@@ -6,9 +6,9 @@ class Game:
         self.grid = []
         self.rules = rules.copy()
         for i in range(SIZEOFBOARD):
-            row = [EMPTY] * SIZEOFBOARD
+            row = [character.EMPTY] * SIZEOFBOARD
             self.grid.append(row)
-        self.last = WHITE
+        self.last = character.WHITE
     
 
     def down(self, p, loc):
@@ -26,9 +26,9 @@ class Game:
         r, c = loc
         if not self.validLoc(loc):
             return 2
-        if p is not BLACK and p is not WHITE:
+        if p is not character.BLACK and p is not character.WHITE:
             return 4
-        if self.grid[r][c] is not EMPTY:
+        if self.grid[r][c] is not character.EMPTY:
             return 3
         restricted = self.otherRules(loc, p)
         if restricted:
@@ -96,7 +96,7 @@ def main():
     game = Game()
     if DEBUG:
         printGame(game)
-    p = BLACK
+    p = character.BLACK
     while True:
         r, c = [int(elem) for elem in input().split()]
         res = game.down(p, (r, c))
@@ -104,13 +104,13 @@ def main():
             print()
             printGame(game)
         if res == 1:
-            print("WIN for {}".format("BLACK" if p is BLACK else "WHITE"))
+            print("WIN for {}".format("BLACK" if p is character.BLACK else "WHITE"))
             input()
             return
         if res > 1:
             print("bad:", res)
         else:
-            p = BLACK if p == WHITE else WHITE
+            p = character.BLACK if p == character.WHITE else character.WHITE
 
 
 def printGame(game):
@@ -118,9 +118,9 @@ def printGame(game):
     for r in range(SIZEOFBOARD):
         print(r, end=" ")
         for c in range(SIZEOFBOARD):
-            if game.grid[r][c] is BLACK:
+            if game.grid[r][c] is character.BLACK:
                 print("*", end=" ")
-            elif game.grid[r][c] is WHITE:
+            elif game.grid[r][c] is character.WHITE:
                 print("#", end=" ")
             else:
                 print(" ", end=" ")
