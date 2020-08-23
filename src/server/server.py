@@ -54,16 +54,19 @@ class GameSession:
             ret[player] = json.dumps(
                 {
                     "action": "Another Join",
-                    "role": assigned.name,
+                    "role": assigned,
                     "name": p.name,
                 })
-            othersDict[player.name] = role.name
+            othersDict[player.name] = role
         ret[p] = json.dumps(
             {
-                # "action": "Self Join",
-                # "role": assigned.name,
+                "action": "Self Join",
+                "gameID": self.ID,
+                "name": p.name,
+                "role": assigned,
                 "others": othersDict,
-                # "board": self.game.grid
+                "board": self.game.grid,
+                "next": 3 - self.game.last,
             })
         self.players[p] = assigned
         p.game = self
@@ -88,6 +91,8 @@ class GameSession:
                 })
             for player in self.players.keys():
                 ret[player] = info
+            if res == 1:
+                self.ended = True
         else:
             err = "Invalid action"
             if res == 2 or res == 3:
@@ -102,11 +107,12 @@ class GameSession:
 
     def delPlayer(self, p: Player) -> Dict[Player, str]:
         ret: Dict[Player, str] = dict()
-        self.players.pop(p, None)
+        role: gomoku.character = self.players.pop(p, None)
         for player in self.players.keys():
             ret[player] = json.dumps(
                 {
                     "action": "Another Leave",
+                    "role": role,
                     "name": p.name,
                 })
         ret[p] = json.dumps({"action": "Self Leave"})
@@ -116,7 +122,7 @@ class GameSession:
     def nextRole(self) -> gomoku.character:
         b = False
         w = False
-        for role in self.players.items():
+        for role in self.players.values():
             if role is gomoku.character.BLACK:
                 b = True
             elif role is gomoku.character.WHITE:
@@ -130,79 +136,103 @@ class GameSession:
 
 class Server:
 
-    def __init__(self, logLevel=logging.DEBUG, retryThreshold=10, gameIDLen=20):
-        self.logger = logging.Logger("gomoku.io", level=logLevel)
+    def __init__(self, retryThreshold=10, gameIDLen=32):
+        self.logger = logging.getLogger("Server")
         self.retryThreshold = retryThreshold
         self.gameIDLen = gameIDLen
         self.sessions: Dict[str, GameSession] = dict()
         self.sessionsLock: asyncio.Lock = asyncio.Lock()
+        self.connectionID = 0
         # self.players: Dict[str, Player] = dict()
         # self.playersLock: asyncio.Lock = asyncio.Lock()
 
 
     async def dispatcher(self, websocket: websockets.server.WebSocketServerProtocol, path: str):
+        conn: int = self.connectionID
+        self.connectionID += 1
         player: Player = None
         try:
-            self.logger.debug(f"new connection, path={path}")
+            self.logger.info(f"new connection from websocket: {websocket}, assigning connectionID {conn}, path={path}")
             player = Player(websocket)
+            player.conn = conn
             while True:
+
                 clientMsg: str = await websocket.recv()
-                self.logger.debug(f"new message from websocket: {websocket}")
+                self.logger.info(f"new message from {conn}, string is \"{clientMsg}\"")
                 try:
                     req: Dict = json.loads(clientMsg)
                 except:
-                    self.logger.warning("bad request: cannot load json")
+                    self.logger.warning(f"bad request from {conn}: cannot load json")
                     await websocket.send(error("Bad request: json error"))
                     continue
 
                 action: str = req.get("action", None)
 
                 if action == "Join":
+                    if player.game is not None:
+                        self.logger.warning(f"bad request from {conn}: joining while already in game")
+                        await websocket.send(error("Invalid action: already in game"))
+
                     ID: str = req.get("ID", None)
                     gameSession = await self.join(ID, player)
+
+                    name: str = req.get("name", None)
+                    if name is None:
+                        name = f"some random guy {conn}"
+                    player.name = name
+
                     if gameSession is None:
                         # cannot put the player in a game
-                        self.logger.warning(f"server error: could not put the player into a game")
+                        self.logger.warning(f"server error for {conn}: could not put the player into a game")
                         await websocket.send(error("Cannot join game"))
                         continue
+
                     async with gameSession.lock:
                         messages = gameSession.addPlayer(player)
-                    for target, msg in messages.items():
-                        await target.ws.send(msg)
+                    for target, message in messages.items():
+                        self.logger.info(f"sending: {target.conn}, {message}")
+                        await target.ws.send(message)
 
                 elif action == "Put":
                     if player.game is None:
                         # player isn't in a game
-                        self.logger.warning(f"invalid action: not in a game when trying to put")
+                        self.logger.warning(f"invalid action from {conn}: not in a game when trying to put")
                         await websocket.send(error("Invalid action: not in game"))
                         continue
+
                     loc: Tuple[int, int] = req.get("location", None)
                     if loc is None:
                         # bad request
-                        self.logger.warning(f"bad request: does not have location specified")
+                        self.logger.warning(f"bad request from {conn}: does not have location specified")
                         await websocket.send(error("Bad request: no location specified"))
                         continue
+
                     async with player.game.lock:
                         messages = player.game.put(player, loc)
-                    for target, message in messages.item():
+                    for target, message in messages.items():
+                        self.logger.info(f"sending: {target.conn}, {message}")
                         await target.ws.send(message)
                     
                 else:
-                    self.logger.warning("bad request: unsupported action")
+                    self.logger.warning(f"bad request from {conn}: unsupported action")
                     await websocket.send(error("Bad request: invalid action"))
 
         except(websockets.exceptions.ConnectionClosed,
             websockets.exceptions.ConnectionClosedOK,
             websockets.exceptions.ConnectionClosedError):
-            info = "client closes"
+            info = f"client {conn} closes"
             if player is None or player.game is None:
                 # The player is not in a game
                 self.logger.info(info + ", client not in game")
                 return
+            self.logger.info(info + ", dropping client out")
+
             gameSession = player.game
             async with gameSession.lock:
                 messages = gameSession.delPlayer(player)
-            for target, message in messages.item():
+            for target, message in messages.items():
+                if target == player:
+                    continue
                 await target.ws.send(message)
 
             player.game = None
@@ -220,7 +250,7 @@ class Server:
                 if ID not in self.sessions.keys():
                     s = GameSession(ID)
                     self.sessions[ID] = s
-            return s
+                return self.sessions[ID]
         
         retries = 0
         while ID is None and retries <= self.retryThreshold:
@@ -235,8 +265,8 @@ class Server:
         return None
 
 
-    def getRandomGameID(self):
-        return random.getrandbits(self.gameIDLen)
+    def getRandomGameID(self) -> str:
+        return str(random.getrandbits(self.gameIDLen))
 
 
 def error(msg: str):
@@ -244,6 +274,7 @@ def error(msg: str):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     server = Server()
     asyncio.get_event_loop().run_until_complete(websockets.serve(server.dispatcher, "localhost", 8080))
     asyncio.get_event_loop().run_forever()
@@ -251,4 +282,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    debug = True
