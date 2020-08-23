@@ -172,6 +172,7 @@ class Server:
                     if player.game is not None:
                         self.logger.warning(f"bad request from {conn}: joining while already in game")
                         await websocket.send(error("Invalid action: already in game"))
+                        continue
 
                     ID: str = req.get("ID", None)
                     gameSession = await self.join(ID, player)
