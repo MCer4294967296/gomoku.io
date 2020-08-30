@@ -7,22 +7,40 @@
       body {
         background: lightblue;
       }
+      label {
+        margin-bottom: 0px;
+      }
     </style>
   </head>
   <body>
     <div class="navbar">
     </div>
-    <div class="container-fluid">
+    <div class="container">
       <div class="row justify-content-center">
-        <div class="col" id="base" style="max-width: 80vmin;">
+        <div class="col-9" id="base" style="max-width: 70vmin;">
+        </div>
+        <div class="col-3">
+          <div class="row" style="margin-top: 10px; margin-bottom: 10px">
+            <label style="width: 100%; text-align: center;" id="messageBar">Welcome!</label>
+          </div>
+          <div class="row">
+            <div class="col">
+              <textarea class="form-control" readonly id="chatBox" rows="15"></textarea>
+            </div>
+          </div>
+          <div class="row justify-content-between" style="margin-top: 10px;"> 
+            <div class="col-9" style="padding-right: 3px;">
+              <input type="text" id="chatInput" style="width: 100%;">
+            </div>
+            <div class="col-3" style="padding-left: 3px;">
+              <button class="btn btn-primary" onclick="chat()">send</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="row" style="margin-top: 30px;">
-        <label style="width: 100%; text-align: center;" id="winning"> is winning </label>
-      </div>
-      <div class="row" style="margin-top: 30px;">
-        <div class="col-8" style="margin-right: 5%;">
-          <div class="row" style="width: 95%; margin-left: 5%;">
+      <div class="row" style="margin-top: 20px;">
+        <div class="col-8" style="margin-right: 5px;">
+          <div class="row">
             <ul class="list-group" style="width: 100%;">
               <li class="list-group-item" id="blkPlayerItem">
                 <label>BLACK: </label>
@@ -32,23 +50,23 @@
               </li>
             </ul>
           </div>
-          <div class="row align-items-center" style="margin-top: 30px;">
+          <div class="row align-items-center" style="margin-top: 20px;">
             <div class="col-3" style="text-align: right;"><label>Game ID</label></div>
-            <div class="col"><input type="text" id="gameID" style="width: 100%;" placeholder="Leave this empty to randomly create one..."></div>
+            <div class="col"><input class="form-control" type="text" id="gameID" style="width: 100%;" placeholder="Leave this empty to randomly create one..."></div>
           </div>
           <div class="row align-items-center">
             <div class="col-3" style="text-align: right;"><label>Pick a Name! </label></div>
-            <div class="col"><input type="text" id="playerName" style="width: 100%;"></div>
+            <div class="col"><input class="form-control" type="text" id="playerName" style="width: 100%;"></div>
           </div>
-          <div class="row" style="margin-top: 30px;">
+          <div class="row" style="margin-top: 20px;">
             <div class="col" style="text-align: center;">
-              <button class="btn btn-primary" onclick="connect()">Join!</button>
+              <button class="btn btn-primary" onclick="join()" id="joinButton">Join!</button>
             </div>
           </div>
         </div>
-        <div class="col">
+        <div class="col" style="margin-left: 5px;">
           <div class="row">
-            <ul class="list-group" id="spectatorList", style="width: 100%; margin-right: 13%;">
+            <ul class="list-group" id="spectatorList", style="width: 100%;">
               <li class="list-group-item">Spectators</li>
             </ul>
           </div>

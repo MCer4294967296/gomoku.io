@@ -67,6 +67,7 @@ class GameSession:
                 "others": othersDict,
                 "board": self.game.grid,
                 "next": 3 - self.game.last,
+                "ended": self.ended,
             })
         self.players[p] = assigned
         p.game = self
@@ -105,6 +106,18 @@ class GameSession:
         return ret
 
 
+    def broadCast(self, p: Player, msg: str) -> Dict[Player, str]:
+        ret: Dict[Player, str] = dict()
+        for player in self.players.keys():
+            ret[player] = json.dumps(
+                {
+                    "action": "Chat",
+                    "from": p.name,
+                    "content": msg,
+                })
+        return ret
+
+
     def delPlayer(self, p: Player) -> Dict[Player, str]:
         ret: Dict[Player, str] = dict()
         role: gomoku.character = self.players.pop(p, None)
@@ -116,6 +129,7 @@ class GameSession:
                     "name": p.name,
                 })
         ret[p] = json.dumps({"action": "Self Leave"})
+        p.game = None
         return ret
 
 
@@ -166,7 +180,7 @@ class Server:
                     await websocket.send(error("Bad request: json error"))
                     continue
 
-                action: str = req.get("action", None)
+                action: str = req.get("action", "")
 
                 if action == "Join":
                     if player.game is not None:
@@ -174,19 +188,19 @@ class Server:
                         await websocket.send(error("Invalid action: already in game"))
                         continue
 
-                    ID: str = req.get("ID", None)
+                    ID: str = req.get("ID", "")
                     gameSession = await self.join(ID, player)
-
-                    name: str = req.get("name", None)
-                    if name is None:
-                        name = f"some random guy {conn}"
-                    player.name = name
 
                     if gameSession is None:
                         # cannot put the player in a game
                         self.logger.warning(f"server error for {conn}: could not put the player into a game")
                         await websocket.send(error("Cannot join game"))
                         continue
+
+                    name: str = req.get("name", "")
+                    if name == "":
+                        name = f"some random guy {conn}"
+                    player.name = name
 
                     async with gameSession.lock:
                         messages = gameSession.addPlayer(player)
@@ -213,7 +227,39 @@ class Server:
                     for target, message in messages.items():
                         self.logger.info(f"sending: {target.conn}, {message}")
                         await target.ws.send(message)
+                
+                elif action == "Chat":
+                    if player.game is None:
+                        # player isn't in a game
+                        self.logger.warning(f"invalid action from {conn}: not in a game when trying to put")
+                        await websocket.send(error("Invalid action: not in game"))
+                        continue
                     
+                    msg: str = req.get("message", "")
+                    if msg == "":
+                        continue
+                    
+                    messages = player.game.broadCast(player, msg)
+                    for target, message in messages.items():
+                        self.logger.info(f"sending: {target.conn}, {message}")
+                        await target.ws.send(message)
+
+                elif action == "Leave":
+                    if player.game is None:
+                        # player isn't in a game
+                        self.logger.warning(f"invalid action from {conn}: not in a game when trying to put")
+                        await websocket.send(error("Invalid action: not in game"))
+                        continue
+                    
+                    gameSession = player.game
+                    async with gameSession.lock:
+                        messages = gameSession.delPlayer(player)
+                    for target, message in messages.items():
+                        self.logger.info(f"sending: {target.conn}, {message}")
+                        await target.ws.send(message)
+
+                    await self.leave(gameSession)
+
                 else:
                     self.logger.warning(f"bad request from {conn}: unsupported action")
                     await websocket.send(error("Bad request: invalid action"))
@@ -236,17 +282,14 @@ class Server:
                     continue
                 await target.ws.send(message)
 
-            player.game = None
-            if len(gameSession.players) == 0:
-                async with self.sessionsLock:
-                    self.sessions.pop(gameSession.ID)
+            await self.leave(gameSession)
 
         # except Exception as e:
         #     self.logger.error("other exceptions: " + str(e))
 
 
     async def join(self, ID: str, player: Player) -> GameSession:
-        if ID is not None:
+        if ID != "":
             async with self.sessionsLock:
                 if ID not in self.sessions.keys():
                     s = GameSession(ID)
@@ -254,16 +297,21 @@ class Server:
                 return self.sessions[ID]
         
         retries = 0
-        while ID is None and retries <= self.retryThreshold:
+        while ID == "" and retries <= self.retryThreshold:
             ID = self.getRandomGameID()
             async with self.sessionsLock:
                 if ID not in self.sessions.keys():
                     s = GameSession(ID)
                     self.sessions[ID] = s
                     return s
-            ID = None
+            ID = ""
             retries += 1
         return None
+
+    async def leave(self, gs: GameSession):
+        if len(gs.players) == 0:
+            async with self.sessionsLock:
+                self.sessions.pop(gs.ID)
 
 
     def getRandomGameID(self) -> str:

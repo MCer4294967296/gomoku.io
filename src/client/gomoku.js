@@ -1,101 +1,151 @@
-var ws = new WebSocket("ws://localhost:8080");
-
+var ws;
 const EMPTY = 0, BLACK = 1, WHITE = 2, SIZE = 15;
-window.role = EMPTY;
+const wsuri = "ws://localhost:8080";
 
-base = document.getElementById("base")
-crossWidth = Math.floor(50 / SIZE);
-for (let i = 0; i < SIZE; i++) {
-    let row = document.createElement("div")
-    row.classList.add("row");
-    row.classList.add("no-gutters");
-    // row.style.marginLeft = "-20px";
-    // row.style.marginRight = "-20px";
-    for (let j = 0; j < SIZE; j++) {
-        let cross = document.createElement("img");
-        cross.classList.add("img-fluid")
-        cross.id = i*SIZE + j;
-        cross.onclick = putDown;
-        // cross.style.width = crossWidth + "vw";
-        // cross.style.height = crossWidth + "vh";
-        suffix = "n.jpg";
-        if (i == 0) {
-            if (j == 0) {
-                cross.src = "ul" + suffix;
-            } else if (j == SIZE - 1) {
-                cross.src = "ur" + suffix;
+function init() {
+    // Connection
+    ws = new WebSocket(wsuri);
+    ws.onmessage = process;
+
+    window.role = EMPTY;
+
+    base = document.getElementById("base");
+    crossWidth = Math.floor(50 / SIZE);
+    for (let i = 0; i < SIZE; i++) {
+        let row = document.createElement("div");
+        row.classList.add("row");
+        row.classList.add("no-gutters");
+        for (let j = 0; j < SIZE; j++) {
+            let cross = document.createElement("img");
+            cross.classList.add("img-fluid");
+            cross.id = i*SIZE + j;
+            cross.onclick = putDown;
+            suffix = "n.jpg";
+            if (i == 0) {
+                if (j == 0) {
+                    cross.src = "ul" + suffix;
+                } else if (j == SIZE - 1) {
+                    cross.src = "ur" + suffix;
+                } else {
+                    cross.src = "up" + suffix;
+                }
+            } else if (i == SIZE - 1) {
+                if (j == 0) {
+                    cross.src = "ll" + suffix;
+                } else if (j == SIZE - 1) {
+                    cross.src = "lr" + suffix;
+                } else {
+                    cross.src = "lo" + suffix;
+                }
             } else {
-                cross.src = "up" + suffix;
+                if (j == 0) {
+                    cross.src = "le" + suffix;
+                } else if (j == SIZE - 1) {
+                    cross.src = "ri" + suffix;
+                } else {
+                    cross.src = "ce" + suffix;
+                }
             }
-        } else if (i == SIZE - 1) {
-            if (j == 0) {
-                cross.src = "ll" + suffix;
-            } else if (j == SIZE - 1) {
-                cross.src = "lr" + suffix;
-            } else {
-                cross.src = "lo" + suffix;
-            }
-        } else {
-            if (j == 0) {
-                cross.src = "le" + suffix;
-            } else if (j == SIZE - 1) {
-                cross.src = "ri" + suffix;
-            } else {
-                cross.src = "ce" + suffix;
-            }
+            let col = document.createElement("div");
+            col.classList.add("col");
+            col.append(cross);
+            row.append(col);
         }
-        let col = document.createElement("div");
-        col.classList.add("col")
-        col.append(cross);
-        row.append(col);
+        base.append(row);
     }
-    base.append(row);
-}
 
+    document.getElementById("chatInput").addEventListener("keyup", ifReturn(chat));
+    document.getElementById("gameID").addEventListener("keyup", ifReturn(join));
+    document.getElementById("playerName").addEventListener("keyup", ifReturn(join));
+
+    document.getElementById("chatBox").value = "Chat:\n";
+}
 
 function process(msg) {
     console.log("receive:", msg.data);
     let resp = JSON.parse(msg.data);
     window.resp = resp;
-    let action = resp["action"]
+    let action = resp["action"];
     if (action == "Error") { ///////////////////////////////////////
         console.log(resp["reason"]);
 
     } else if (action == "Self Join") { ////////////////////////////
         // show gameID
         document.getElementById("gameID").value = resp["gameID"];
-        document.getElementById("gameID").disabled = true;
+        document.getElementById("gameID").readOnly = true;
 
         // add self
         let role = resp["role"];
         window.role = role;
-        addPlayerAs(resp["name"], role)
+        addPlayerAs(resp["name"], role);
         document.getElementById("playerName").value = resp["name"];
-        document.getElementById("playerName").disabled = true;
+        document.getElementById("playerName").readOnly = true;
 
         // render board
         for (let row in resp["board"]) {
-            let r = resp["board"][row]
+            let r = resp["board"][row];
             for (let col in r) {
-                changeSlotTo(parseInt(row) * SIZE + parseInt(col), numToChar(r[col]));
+                changeSlotTo(parseInt(row) * SIZE + parseInt(col), r[col]);
             }
         }
 
         // add others
         let others = resp["others"];
-        window.others = others;
+        // window.others = others;
         for (let name in others) {
             addPlayerAs(name, others[name]);
         }
 
+        // next player note
+        let next = resp["next"];
+        if (resp["ended"] == true) {
+            document.getElementById("messageBar").innerText = ["", "Black", "White"][next] + " has won!";
+        } else {
+            document.getElementById("messageBar").innerText = ["", "Black", "White"][next] + " is moving...";
+        }
+
+        // disable the Join Button
+        document.getElementById("joinButton").onclick = leave;
+        document.getElementById("joinButton").innerText = "Leave";
+
+    } else if (action == "Self Leave") {////////////////////////////
+        window.role = EMPTY;
+
+        // clear board
+        for (let i = 0; i < SIZE; i++) {
+            for (let j = 0; j < SIZE; j++) {
+                changeSlotTo(i * SIZE + j, 0);
+            }
+        }
+
+        document.getElementById("messageBar").innerText = "You have left the game.";
+
+        document.getElementById("blkPlayerItem").firstElementChild.innerText = "BLACK: ";
+        document.getElementById("whtPlayerItem").firstElementChild.innerText = "WHITE: ";
+
+        let specList = document.getElementById("spectatorList");
+        while (specList.childElementCount > 1) {
+            specList.removeChild(specList.lastChild);
+        }
+
+        document.getElementById("gameID").readOnly = false;
+        document.getElementById("playerName").readOnly = false;
+
+        document.getElementById("joinButton").onclick = join;
+        document.getElementById("joinButton").innerText = "Join!";
+
+        document.getElementById("chatBox").value = "Chat:\n";
+
     } else if (action == "Putted") { ///////////////////////////////
         let ID = parseInt(resp["location"][0]) * SIZE + parseInt(resp["location"][1]);
+        let role = resp["role"];
+        changeSlotTo(ID, role);
 
-        changeSlotTo(ID, numToChar(resp["role"]))
-        if (resp["winning"] == 1) {
-            let lbl = document.getElementById("winning");
-            lbl.innerText = ["", "Black", "White"][resp["role"]] + " has won!"
-            // win;
+        let lbl = document.getElementById("messageBar");
+        if (resp["winning"] == 0) {
+            lbl.innerText = ["", "White", "Black"][role] + " is moving...";
+        } else if (resp["winning"] == 1) {
+            lbl.innerText = ["", "Black", "White"][role] + " has won!";
         }
 
     } else if (action == "Another Join") {
@@ -122,27 +172,27 @@ function process(msg) {
                 }
             }
         }
+    } else if (action == "Chat") {
+        let chatBox = document.getElementById("chatBox");
+        chatBox.value += resp["from"] + ": " + resp["content"] + "\n";
+        chatBox.scrollTop = chatBox.scrollHeight;
     }
 }
-ws.onmessage = process;
+
+init();
 
 
 function changeSlotTo(id, role) {
     img = document.getElementById(String(id));
-    img.src = img.src.replace(/.\.jpg/, role+".jpg")
+    img.src = img.src.replace(/.\.jpg/, ["n", "b", "w"][role]+".jpg");
 }
 
-
-function numToChar(num, full=false) {
-    let res = ["n", "b", "w"];
-    return res[num];
-}
 
 function addPlayerAs(name, role) {
     if (role == BLACK) {
-        document.getElementById("blkPlayerItem").firstElementChild.innerText += " " + name;
+        document.getElementById("blkPlayerItem").firstElementChild.innerText = "BLACK: " + name;
     } else if (role == WHITE) {
-        document.getElementById("whtPlayerItem").firstElementChild.innerText += " " + name;
+        document.getElementById("whtPlayerItem").firstElementChild.innerText = "WHITE: " + name;
     } else {
         let li = document.createElement("li");
         li.classList.add("list-group-item");
@@ -151,50 +201,35 @@ function addPlayerAs(name, role) {
     }
 }
 
-
-function connect() {
-    let gameID = document.getElementById("gameID").value;
-    if (gameID == "") {
-        gameID = null;
-    }
-    let playerName = document.getElementById("playerName").value;
-    if (playerName == "") {
-        playerName = null;
-    }
-    ws.send(JSON.stringify(
-        {
-            "action": "Join",
-            "ID": gameID,
-            "name": playerName,
+function ifReturn(callable) {
+    return function(e) {
+        if (e.keyCode == 13) {
+            callable();
         }
-    ));
-    // function s() {
-    //     console.log("sending: ", gameID, " ", playerName);
-    //     ws.send(JSON.stringify(
-    //         {
-    //             "action": "Join",
-    //             "ID": gameID,
-    //             "name": playerName,
-    //         }
-    //     ));
-    // }
-    // if (ws.readyState != 1) {
-    //     ws = new WebSocket("ws://localhost:8080");
-    //     ws.onmessage = process;
-    //     ws.onopen = s;
-    // } else {
-    //     s();
-    // }
-    
+    }
 }
 
+
+function join() {
+    ws.send(JSON.stringify({
+            "action": "Join",
+            "ID": document.getElementById("gameID").value,
+            "name": document.getElementById("playerName").value,
+        }));
+}
+
+function leave() {
+    ws.send(JSON.stringify({
+        "action": "Leave",
+    }));
+}
 
 function putDown(e) {
     if (window.role == EMPTY) {
         return;
     }
     let img = e.target;
-    let id = parseInt(img.id)
+    let id = parseInt(img.id);
     if (img.src.indexOf("n.jpg") == -1) {
         return;
     }
@@ -202,5 +237,12 @@ function putDown(e) {
         "action": "Put",
         "location": [Math.floor(id/SIZE), id%SIZE],
     }));
-    return;
+}
+
+function chat() {
+    ws.send(JSON.stringify({
+        "action": "Chat",
+        "message": document.getElementById("chatInput").value,
+    }));
+    document.getElementById("chatInput").value = "";
 }
